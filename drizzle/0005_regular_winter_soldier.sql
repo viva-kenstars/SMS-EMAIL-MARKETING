@@ -1,0 +1,1 @@
+CREATE INDEX `recipients_batch_status` ON `recipients` (`batch_id`,`status`);

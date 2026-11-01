@@ -1,0 +1,44 @@
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      SMTP_RELAY_PUBLIC_URL: ${SMTP_RELAY_PUBLIC_URL:?Set the public HTTPS origin}
+      SMTP_RELAY_TOKEN: ${SMTP_RELAY_TOKEN:?Set a random relay API token}
+      SMTP_RELAY_SIGNING_KEY: ${SMTP_RELAY_SIGNING_KEY:?Set a separate stable signing key}
+      SMTP_ALLOWED_PORTS: ${SMTP_ALLOWED_PORTS:-465,587,2525}
+      SMTP_MAX_CONCURRENT: ${SMTP_MAX_CONCURRENT:-5}
+      TREZAD_SITE_URL: ${TREZAD_SITE_URL:-}
+      SITE_PLATFORM_TOKEN: ${SITE_PLATFORM_TOKEN:-}
+      MARKETING_WORKER_TOKEN: ${MARKETING_WORKER_TOKEN:-}
+      EMAIL_WORKER_TOKEN: ${EMAIL_WORKER_TOKEN:-}
+      SCHEDULER_INTERVAL_MS: ${SCHEDULER_INTERVAL_MS:-1000}
+    volumes:
+      - relay_data:/app/data
+    networks: [relay]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
+    stop_grace_period: 55s
+  https:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SMTP_RELAY_HOST: ${SMTP_RELAY_HOST:?Set the relay DNS hostname}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [relay]
+    depends_on:
+      relay:
+        condition: service_healthy
+volumes:
+  relay_data:
+  caddy_data:
+  caddy_config:
+networks:
+  relay:

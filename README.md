@@ -1,6 +1,18 @@
 # Trezad SMS & Email Marketing
 
-A private SMS, WhatsApp and email-verification workspace for Nigerian businesses and communities. Built with React, Vinext, Cloudflare Workers and D1, with seven server-side SMS provider integrations and Reoon mailbox verification.
+A private SMS, WhatsApp and email marketing workspace for Nigerian businesses and communities. Built with React, Vinext, Cloudflare Workers and D1, with seven server-side SMS provider integrations, Reoon mailbox verification and a separate SMTP sending service.
+
+## Email marketing — 1 November 2026
+
+Open **Email marketing** in the sidebar or use `#marketing`. Create HTML campaigns with a visual editor, full source editing, desktop/mobile preview and six sample templates. Save drafts, send a test to an explicitly entered mailbox, choose verified contact groups and rotate selected SMTP accounts at a configured interval. Campaigns support scheduled starts, pause, resume of pending recipients, cancellation and persistent per-recipient reports.
+
+Add multiple SMTP accounts with independent enable switches, connection tests, daily attempt caps and minimum intervals. Passwords and the sending-service token are encrypted using the existing master key. Import only provider-verified Valid results from completed verifier jobs into new or existing titled groups; existing suppressions and duplicate memberships are preserved.
+
+Generic SMTP requires the included **separate Node sending service** because the private Site runtime cannot open SMTP TCP connections. The service provides strict TLS, durable delivery IDs, public signed unsubscribe pages and a background queue runner. Deploy `services/smtp-relay/` on a host with outbound SMTP and HTTPS, then connect it in **Sending setup**. The private app also includes `/smtp-service-setup.html` and a downloadable service package. These files do not provision a server or prove real-provider delivery.
+
+See [Email marketing guide](docs/email-marketing.md) and [SMTP service deployment](docs/smtp-relay.md) for the complete workflow, security boundaries and installation steps. Unknown SMTP outcomes are retained for review and are not automatically retried. SMTP acceptance is reported separately from inbox delivery. No real campaign or test email is sent by the automated tests.
+
+The recovered original app passes all 364 previous regression checks. The background verification client now honors the configured HTTP/HTTPS proxy; a separate protected hourly task advances only verifier jobs already started by the owner. The SMTP service's own worker controls campaign intervals independently of that hourly task. New release checks are recorded in [release validation](docs/release-validation-2026-11-01.md).
 
 ## Email verifier — 29 October 2026
 
@@ -16,7 +28,7 @@ An authenticated background endpoint can advance jobs after the browser closes. 
 
 CSV exports fetch bounded result pages. Browsers with the native save-file API stream the whole report to one file. Other browsers download bounded parts, with a **Download next CSV part** action until the selected results are exhausted. Exported values are protected against spreadsheet formula execution. Wait for a completed job when you need a final, stable category export.
 
-This feature verifies addresses; it does not add an email campaign-sending service. Existing SMS contacts and message-campaign limits remain documented separately below.
+The verifier supplies eligible results to the separate email marketing workflow above. Existing SMS contacts and message-campaign limits remain documented separately below.
 
 ### Run the checks
 
@@ -27,9 +39,9 @@ npm run typecheck
 npm run build
 ```
 
-The release passes **364 automated checks across 15 test files**, including actual Miniflare/workerd and D1 checks. A complete **20,001-address** mocked verification run finishes all eleven bulk tasks and exports every row exactly once; separate tests stream 50,001 imported records and 51,007 exported rows. All verification tests use synthetic addresses and mock provider responses. Live mailbox accuracy, account billing and throughput require a configured Reoon account and an explicitly started real verification job. The managed preview service was unavailable during this release, so browser layout QA remains unverified.
+The current release passes **416 automated checks across 17 test files**, including actual Miniflare/workerd and D1 checks. A complete **20,001-address** mocked verification run finishes all eleven bulk tasks and exports every row exactly once; separate tests stream 50,001 imported records and 51,007 exported rows. All verification tests use synthetic addresses and mock provider responses. Live mailbox accuracy, account billing and throughput require a configured Reoon account and an explicitly started real verification job. The managed preview service was unavailable during this release, so browser layout QA remains unverified.
 
-The GitHub working branches are **engineering** and **staging**. The existing `.openai/hosting.json` retains the same private Site identity, D1 binding and source provenance. Both email migrations, 0008 and 0009, must ship together. Do not commit runtime credentials, D1 databases, uploaded lists, local environment files or generated build directories.
+Use **engineering** for implementation and **staging** for release validation. **main** holds the published source baseline. These branches do not provision separate hosted environments. The public `.openai/hosting.json` retains the D1 binding but intentionally omits the private Site project ID; connect a separate installation to its own authorized hosting project and configure its real application origin. The public UI uses a generic Owner label. All original migrations, including 0008 and 0009, and migration 0010 for email marketing are included. Runtime credentials, D1 databases, uploaded lists, local environment files and generated build directories are excluded. Private hosting access, data and recurring task registrations are not copied by cloning this repository.
 
 ## Current activation state
 
@@ -78,7 +90,7 @@ No external provider account was created, no credits purchased, and no live mess
 
 Changing credentials clears verification and pauses that provider until it is tested and activated again; alternative-provider sender confirmations are cleared on credential replacement. Re-entering an identical Termii key with an unchanged base URL preserves verification, sender approval and campaign bindings. A definitive HTTP 401 from an explicit connection test invalidates only the checked verification, pausing effective use until the account passes a new test; transient errors and background balance failures do not reset it. Delayed failures cannot invalidate newer credentials or a newer successful test. Removing credentials pauses that connection while retaining history. New SMS campaigns freeze the provider and credential generation. An existing campaign can resume only with its original provider active and the same credentials and sender. Duplicate a campaign to review it with a different provider or replacement account. Older drafts created before account generations were recorded also require duplication; historical data is not retroactively relabelled as belonging to the current credentials.
 
-Alphanumeric sender IDs usually do not accept replies. Use a real monitored opt-out method in promotional copy; record opt-outs through the contact suppression control. This app does not provision an inbound STOP number or a public unsubscribe service.
+Alphanumeric sender IDs usually do not accept replies. Use a real monitored opt-out method in promotional copy; record opt-outs through the contact suppression control. The SMS channel does not provision an inbound STOP number. Email unsubscribe pages are supplied by the separate SMTP service.
 
 ## Dashboard balance and sender IDs
 
@@ -127,7 +139,7 @@ Use preview for validation without sending, or review and explicitly confirm a l
 - All four complete Nigerian mobile formats are accepted: `+2347061234567` (recommended), `2347061234567`, `07061234567` and `7061234567`. They normalize to `+2347061234567` for storage and deduplication. Each adapter converts that canonical value into its required wire format. Drop the local leading zero when adding `234`; `+23407061234567` is invalid. Keep CSV phone columns as text. Validation checks number structure, not active SIM ownership.
 - Duplicate imports do not overwrite prior consent or suppression choices.
 - Campaign creation snapshots the selected eligible recipients and persists all rows before the draft becomes sendable.
-- SMS batches follow the provider table above. WhatsApp requests contain one recipient, with up to five requests in each dispatch batch. The browser dispatches consecutive batches and must remain open; returning to a partially submitted campaign permits resuming only unsubmitted batches. There is no background scheduler in this release.
+- SMS batches follow the provider table above. WhatsApp requests contain one recipient, with up to five requests in each dispatch batch. The browser dispatches consecutive batches and must remain open; returning to a partially submitted campaign permits resuming only unsubmitted batches. SMS and WhatsApp have no background scheduler; email campaigns use the separate SMTP service runner described above.
 - Atomic batch claims prevent repeat submissions of the same pending batch. Permission and suppression are checked again just before each submission.
 - If the final setup check fails before any provider submission is attempted, only that provably unsent batch returns to pending. Suppressed and concurrently cancelled recipients stay skipped. Once submission starts, an uncertain result cannot be released or replayed.
 - Network timeouts, interrupted requests and ambiguous responses are marked **Unknown**. They are not retried automatically. Check provider history first; the provider may already have billed and delivered those messages.

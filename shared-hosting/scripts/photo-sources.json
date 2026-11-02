@@ -1,0 +1,30 @@
+{
+  "license": "https://unsplash.com/license",
+  "checked": "2026-11-02",
+  "photos": {
+    "headphones": {
+      "photo": "photo-1628116709703-c1c9ad550d36",
+      "alt": "Black over-ear headphones on a pale background",
+      "author": "Sam Grozyan",
+      "page": "https://unsplash.com/photos/black-wireless-headphones-on-white-desk-P7KF3cTRKcE"
+    },
+    "workspace": {
+      "photo": "photo-1679459905598-79db89b707f3",
+      "alt": "A desk with a laptop and a plant",
+      "author": "Ryunosuke Kikuno",
+      "page": "https://unsplash.com/photos/a-desk-with-a-laptop-computer-and-a-plant-on-top-of-it--aljSU61s_s"
+    },
+    "flowers": {
+      "photo": "photo-1541385184612-2b78118e5f1f",
+      "alt": "Flowers arranged in white ceramic vases",
+      "author": "insung yoon",
+      "page": "https://unsplash.com/photos/assorted-flowers-in-white-ceramic-vases--KkP1RLGYh4"
+    },
+    "sneakers": {
+      "photo": "photo-1542459432-abfd030ef226",
+      "alt": "White athletic shoes in a sports setting",
+      "author": "Dan Burton",
+      "page": "https://unsplash.com/photos/white-sneakers-XUaUn2NVAGM"
+    }
+  }
+}

@@ -1,0 +1,50 @@
+<?php
+declare(strict_types=1);
+require __DIR__.'/bootstrap.php';
+use function Sendzad\{email,integer,ident,text,seal,unseal,token,read_token,uid,esc,safe_url,clean_style,clean_html,personalized,public_ip,verification_verdict,verify_sendgrid_signature,csv_cell};
+check('email retains local-case/plus and normalizes the domain',static fn()=>eq(email(' Member+sale@EXAMPLE.NET '),'Member+sale@example.net'));
+foreach(['bad','a@example.net,b@example.net','Name <a@example.net>',"a@example.net\r\nBcc:a@evil.net",'a..b@example.net','a@localhost','"user"@example.net'] as $v)check('reject invalid mailbox '.json_encode($v),static fn()=>eq(email($v),null));
+check('valid integer string',static fn()=>eq(integer('5',1,100),5));
+foreach([true,false,1.2,'2x',[],0,101]as $v)check('integer rejects '.json_encode($v),static fn()=>rejects(static fn()=>integer($v,1,100)));
+check('opaque IDs use 128 random bits',static function(){eq(strlen(uid()),32);truth(uid()!==uid());});
+check('record ID validates shape',static fn()=>eq(ident(str_repeat('a',32)),str_repeat('a',32)));
+check('record ID rejects paths',static fn()=>rejects(static fn()=>ident('../secret')));
+check('text rejects header injection',static fn()=>rejects(static fn()=>text("subject\r\nBcc:x",100)));
+check('postal multiline text is supported',static fn()=>eq(text("Street\nLagos",100,true),"Street\nLagos"));
+check('HTML escaping covers attribute and element injection',static fn()=>eq(esc('<img title="x">'), '&lt;img title=&quot;x&quot;&gt;'));
+check('credentials round trip with authenticated context',static fn()=>eq(unseal(seal('synthetic-password','account:1'),'account:1'),'synthetic-password'));
+check('credential ciphertext changes with a random IV',static fn()=>truth(seal('secret','one')!==seal('secret','one')));
+check('wrong credential context is rejected',static fn()=>rejects(static fn()=>unseal(seal('secret','one'),'two'),503));
+check('tampered credential ciphertext is rejected',static function(){$c=base64_decode(seal('secret','one'));$c[30]=chr(ord($c[30])^1);rejects(static fn()=>unseal(base64_encode($c),'one'),503);});
+check('malformed ciphertext fails closed',static fn()=>rejects(static fn()=>unseal('not base64!','one'),503));
+check('tokens validate against purpose and opaque ID',static function(){$id=uid();eq(read_token('open',token('open',$id)),$id);eq(read_token('click',token('open',$id)),null);});
+check('a modified signed token is rejected',static function(){$v=token('open',uid());$v[2]=$v[2]==='a'?'b':'a';eq(read_token('open',$v),null);});
+foreach(['https://example.com/a','http://example.com/a','mailto:a@example.net','tel:+2348000000000']as $u)check('allowed link '.$u,static fn()=>truth(safe_url($u)));
+foreach(['javascript:alert(1)','data:text/html,hi','//example.com','https://user:pass@example.com',"https://example.com/\nsecret"]as $u)check('unsafe link rejected '.json_encode($u),static fn()=>eq(safe_url($u),false));
+check('email images require HTTPS',static function(){truth(safe_url('https://example.com/a.png',true));eq(safe_url('http://example.com/a.png',true),false);});
+check('CSS keeps formatting but removes executable and network styles',static fn()=>eq(clean_style('color:#123456; background-image:url(https://evil.net);width:100%;behavior:url(x);font-size:16px'),'color:#123456;width:100%;font-size:16px'));
+check('personalized HTML escapes recipient values',static fn()=>eq(personalized('<p>{{name}}</p>',['email'=>'a@example.net','name'=>'<img src=x>'],true),'<p>&lt;img src=x&gt;</p>'));
+check('personalization fallback is explicit',static fn()=>eq(personalized('Hi {{first_name}}',['email'=>'a@example.net','name'=>'']),'Hi there'));
+foreach(['127.0.0.1','10.0.0.1','100.64.0.1','169.254.169.254','192.0.2.1','198.18.0.1','224.0.0.1','240.0.0.1','::1','fc00::1','fe80::1','::ffff:8.8.8.8','2001:db8::1','2002:800:800::1','64:ff9b::808:808']as $ip)check('SMTP blocks reserved IP '.$ip,static fn()=>eq(public_ip($ip),false));
+foreach(['8.8.8.8','1.1.1.1','2606:4700:4700::1111']as $ip)check('SMTP permits global unicast '.$ip,static fn()=>truth(public_ip($ip)));
+$safe=['email'=>'Member@example.net','status'=>'safe','is_safe_to_send'=>true,'is_deliverable'=>true,'is_disposable'=>false,'is_role_account'=>false,'has_inbox_full'=>false,'is_catch_all'=>false,'is_disabled'=>false,'is_spamtrap'=>false];
+check('strict safe verification is valid',static fn()=>eq(verification_verdict($safe,'Member@example.net'),'valid'));
+check('a foreign provider result cannot verify an address',static fn()=>eq(verification_verdict($safe,'Other@example.net'),'unknown'));
+foreach(['is_safe_to_send','is_deliverable','is_disposable','is_role_account','has_inbox_full','is_catch_all','is_disabled','is_spamtrap']as $flag){check('missing verification flag '.$flag,static function()use($safe,$flag){$r=$safe;unset($r[$flag]);eq(verification_verdict($r,'Member@example.net'),'unknown');});}
+check('quick-mode valid is not mailbox proof',static fn()=>eq(verification_verdict(array_replace($safe,['status'=>'valid']),'Member@example.net'),'unknown'));
+check('catch-all stays risky',static fn()=>eq(verification_verdict(array_replace($safe,['is_catch_all'=>true]),'Member@example.net'),'risky'));
+check('provider rejection stays invalid',static fn()=>eq(verification_verdict(array_replace($safe,['status'=>'invalid']),'Member@example.net'),'invalid'));
+$private=openssl_pkey_new(['private_key_type'=>OPENSSL_KEYTYPE_EC,'curve_name'=>'prime256v1']);$public=openssl_pkey_get_details($private)['key'];$now=time();$body='[{"event":"delivered"}]';openssl_sign((string)$now.$body,$signature,$private,OPENSSL_ALGO_SHA256);
+check('SendGrid ECDSA signature verifies timestamp plus raw bytes',static fn()=>truth(verify_sendgrid_signature($body,base64_encode($signature),(string)$now,$public,$now)));
+check('SendGrid accepts base64 SPKI verification key',static function()use($public,$body,$signature,$now){$key=preg_replace('/-----[^-]+-----|\s/','',$public);truth(verify_sendgrid_signature($body,base64_encode($signature),(string)$now,$key,$now));});
+check('modified webhook body invalidates signature',static fn()=>eq(verify_sendgrid_signature($body.' ',base64_encode($signature),(string)$now,$public,$now),false));
+check('stale signed webhook is rejected',static fn()=>eq(verify_sendgrid_signature($body,base64_encode($signature),(string)$now,$public,$now+86401),false));
+check('invalid signature encoding is rejected',static fn()=>eq(verify_sendgrid_signature($body,'!!!',(string)$now,$public,$now),false));
+check('CSV formula fields are neutralized',static function(){eq(csv_cell('=SUM(1,1)'),"'=SUM(1,1)");eq(csv_cell(' +1'),"' +1");eq(csv_cell('a@example.net'),'a@example.net');});
+if(class_exists('DOMDocument')){
+ check('HTML sanitizer removes scripts, unsafe URLs and event handlers',static function(){$h=clean_html('<p style="color:#123456" onclick="alert(1)">Hello<script>alert(1)</script><a href="javascript:alert(1)">Visit</a></p>');truth(!str_contains($h,'script'));truth(!str_contains($h,'onclick'));truth(str_contains($h,'color:#123456'));});
+ check('HTML sanitizer preserves email table structure',static fn()=>truth(str_contains(clean_html('<table><tr><td width="200">Hello</td></tr></table>'),'<table>')));
+}else{$skips+=2;echo "SKIP 2 DOM sanitizer tests: PHP DOM is not installed.\n";}
+check('SendGrid tracking defaults explicitly disable provider tracking',static function(){$m=Sendzad\sendgrid_metadata(['track_opens'=>0,'track_clicks'=>0],['id'=>str_repeat('a',32)]);eq($m['filters']['opentrack']['settings']['enable'],0);eq($m['filters']['clicktrack']['settings']['enable'],0);eq($m['filters']['clicktrack']['settings']['enable_text'],false);});
+check('SendGrid correlation metadata contains only the opaque delivery ID',static function(){$m=Sendzad\sendgrid_metadata(['track_opens'=>1,'track_clicks'=>1],['id'=>str_repeat('b',32),'email'=>'private@example.net']);eq($m['unique_args'],['sendzad_delivery_id'=>str_repeat('b',32)]);truth(!str_contains(json_encode($m),'private@example.net'));});
+result();

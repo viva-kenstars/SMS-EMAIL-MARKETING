@@ -1,0 +1,11 @@
+/private/config.php
+/private/vendor/
+/private/admin.sql
+**/.env
+**/.env.*
+!**/.env.example
+**/*.sqlite
+**/*.db
+**/__pycache__/
+**/node_modules/
+/test-output/

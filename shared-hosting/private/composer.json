@@ -1,0 +1,13 @@
+{
+  "name": "sendzad/campaign-workspace",
+  "description": "PHP/MySQL shared-hosting edition of Sendzad Campaigns",
+  "type": "project",
+  "require": {
+    "php": ">=8.2",
+    "ext-pdo": "*", "ext-pdo_mysql": "*", "ext-openssl": "*",
+    "ext-curl": "*", "ext-dom": "*", "ext-mbstring": "*",
+    "phpmailer/phpmailer": "7.1.1"
+  },
+  "config": {"allow-plugins": false, "sort-packages": true},
+  "scripts": {"test": "php tests/unit.php"}
+}

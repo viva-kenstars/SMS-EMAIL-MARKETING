@@ -1,32 +1,85 @@
-name: Sendzad engineering source
+name: Sendzad source build and validation
 on:
   push:
     branches: [engineering]
-    paths: ['.github/workflows/sendzad-engineering.yml']
+    paths:
+      - 'shared-hosting/**'
+      - '.github/workflows/sendzad-engineering.yml'
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: sendzad-engineering-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  source:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: sendzad_test
+          MYSQL_ROOT_PASSWORD: synthetic-ci-only
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -psynthetic-ci-only"
+          --health-interval=10s --health-timeout=5s --health-retries=12
     steps:
       - uses: actions/checkout@v4
-      - name: Export editable source without repository credentials
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, dom, curl, openssl, mbstring
+          tools: composer:v2
+          coverage: none
+      - name: Generate templates and asset manifest from editable source
+        run: python3 shared-hosting/scripts/build_release.py
+      - name: Install pinned SMTP dependency
+        working-directory: shared-hosting/private
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+      - name: Syntax checks
         run: |
+          find shared-hosting -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
+          node --check shared-hosting/public/assets/workspace.js
+          node --check shared-hosting/public/assets/templates.js
+      - name: PHP regression tests (synthetic data, no recipient sends)
+        run: |
+          php shared-hosting/private/tests/unit.php
+          php shared-hosting/private/tests/templates.php
+          php shared-hosting/private/tests/sendzad.php
+      - name: Disposable MySQL integration tests (mock transports)
+        env:
+          SENDZAD_TEST_RESET: '1'
+          SENDZAD_TEST_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=sendzad_test;charset=utf8mb4'
+          SENDZAD_TEST_DB_USER: root
+          SENDZAD_TEST_DB_PASSWORD: synthetic-ci-only
+        run: php shared-hosting/private/tests/integration.php
+      - name: Package generated assets together with editable source
+        run: |
+          test ! -f shared-hosting/private/config.php
+          mkdir -p build
           python3 - <<'PY'
+          import hashlib, json, zipfile
           from pathlib import Path
-          import zipfile
-          with zipfile.ZipFile('sendzad-engineering-source.zip','w',zipfile.ZIP_DEFLATED) as z:
-              for p in Path('.').rglob('*'):
-                  if not p.is_file() or '.git' in p.parts or p.name == 'sendzad-engineering-source.zip':
+          base = Path('shared-hosting')
+          excluded = {'.git', 'node_modules', '__pycache__', 'test-output'}
+          with zipfile.ZipFile('build/sendzad-shared-hosting.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+              sums = []
+              for p in sorted(base.rglob('*')):
+                  if not p.is_file() or excluded.intersection(p.parts):
                       continue
-                  if p.name in ['config.php','.env','.dev.vars','admin.sql'] or 'node_modules' in p.parts:
+                  if p.name in {'config.php', 'admin.sql', '.env', '.dev.vars'} or p.suffix in {'.sqlite', '.db', '.pyc'}:
                       continue
-                  z.write(p,p.as_posix())
+                  name = p.as_posix()
+                  z.write(p, name)
+                  sums.append(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + name)
+              z.writestr('SHA256SUMS.txt', '\n'.join(sums) + '\n')
+          with zipfile.ZipFile('build/sendzad-shared-hosting.zip') as z:
+              assert z.testzip() is None
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: sendzad-engineering-source
-          path: sendzad-engineering-source.zip
-          retention-days: 3
+          name: sendzad-shared-hosting-${{ github.sha }}
+          path: build/sendzad-shared-hosting.zip
+          retention-days: 7

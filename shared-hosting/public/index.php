@@ -1,0 +1,7 @@
+<?php
+header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; frame-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'");
+header('X-Content-Type-Options: nosniff');header('Referrer-Policy: no-referrer');header('Cache-Control: no-store');
+$manifestPath=__DIR__.'/assets/asset-manifest.json';
+$assets=is_file($manifestPath)?json_decode((string)file_get_contents($manifestPath),true):[];
+function asset_version(string $name,array $manifest): string {return htmlspecialchars('assets/'.$name.'?v='.($manifest[$name]['sha256']??'3'),ENT_QUOTES,'UTF-8');}
+?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#245de8"><title>Sendzad Campaigns</title><link rel="stylesheet" href="<?=asset_version('workspace.css',$assets)?>"><script src="<?=asset_version('templates.js',$assets)?>" defer></script><script src="<?=asset_version('workspace.js',$assets)?>" defer></script></head><body><a class="skip" href="#main">Skip to content</a><div id="app"><div class="loading">Loading workspace...</div></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog><div id="toast" role="status" aria-live="polite" hidden></div></body></html>

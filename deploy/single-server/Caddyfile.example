@@ -1,0 +1,21 @@
+# Example only. Replace both DNS names and confirm your PHP-FPM socket.
+# Install the verifier using services/email-verifier/deploy/sendzad-verifier.service.
+campaigns.your-domain.com {
+    root * /srv/sendzad/current/shared-hosting/public
+    encode zstd gzip
+    @private path /_bootstrap.php /preview.html /assets/demo.js /assets/enterprise-demo.js
+    respond @private 404
+    php_fastcgi unix//run/php/php8.3-fpm.sock
+    file_server
+    header Strict-Transport-Security "max-age=31536000"
+}
+verify.your-domain.com {
+    request_body {
+        max_size 4KB
+    }
+    reverse_proxy 127.0.0.1:8095
+    header Strict-Transport-Security "max-age=31536000"
+}
+# MySQL listens on loopback or a Unix socket. Do not expose port 3306 publicly.
+# Verifier port 8095 is loopback-only. No incoming port 25 is needed for checks.
+# Outbound port 25 still needs provider permission. Do not disable TLS or auth.

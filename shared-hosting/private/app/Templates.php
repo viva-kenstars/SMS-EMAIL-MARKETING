@@ -136,19 +136,33 @@ function merge_values(array $b,array $r,array $c,string $unsubscribe,int $year):
     return ['{{email}}'=>(string)($r['email']??''),'{{name}}'=>$name?:'there','{{first_name}}'=>$first,'{{brand_name}}'=>$b['name'],'{{website_url}}'=>$b['website'],'{{postal_address}}'=>$b['postal_address'],'{{permission_reminder}}'=>$b['permission_reminder'],'{{year}}'=>(string)$year,'{{preheader}}'=>(string)($c['preheader']??''),'{{unsubscribe_url}}'=>$unsubscribe];
 }
 /** Pure rendering seam for tests: a supplied tracker only rewrites ordinary content links. */
+/** Preserve an authored footer when its visible content includes the required details. */
+function custom_footer_complete(\DOMDocument $doc,array $brand,string $unsubscribe): bool {
+    $copy=clone $doc;$xp=new \DOMXPath($copy);
+    foreach(iterator_to_array($xp->query('//*[@style]')) as $node){
+        if(preg_match('/(?:display\s*:\s*none|max-height\s*:\s*0(?:px)?(?:;|$)|font-size\s*:\s*0(?:px)?(?:;|$))/i',$node->getAttribute('style')))$node->parentNode?->removeChild($node);
+    }
+    $linked=false;
+    foreach($copy->getElementsByTagName('a') as $a)if($a->getAttribute('href')===$unsubscribe&&trim($a->textContent)!==''){$linked=true;break;}
+    $normalize=static fn(string $v): string => trim((string)preg_replace('/\s+/u',' ',html_entity_decode($v,ENT_QUOTES|ENT_HTML5,'UTF-8')));
+    foreach(iterator_to_array($copy->getElementsByTagName('br')) as $br)$br->parentNode?->replaceChild($copy->createTextNode(' '),$br);
+    foreach(['p','div','td'] as $tag)foreach($copy->getElementsByTagName($tag) as $node)$node->appendChild($copy->createTextNode(' '));
+    $address=$normalize($brand['postal_address']);$visible=$normalize($copy->textContent);
+    return $linked&&$address!==''&&str_contains($visible,$address);
+}
 function compose_email(array $campaign,array $recipient,array $brand,string $unsubscribe,?callable $trackLink=null,?int $year=null): array {
     $b=validate_brand($brand);$year??=(int)gmdate('Y');$vars=merge_values($b,$recipient,$campaign,$unsubscribe,$year);
     $raw=clean_html((string)$campaign['html']);$raw=strtr($raw,array_map(__NAMESPACE__.'\\esc',$vars));
     $doc=email_dom(clean_html($raw));$xp=new \DOMXPath($doc);
     foreach(iterator_to_array($xp->query('//*[@data-tz-preheader]')) as $node)$node->parentNode?->removeChild($node);
     replace_email_module($doc,'header',brand_header_html($b));
-    if(!replace_email_module($doc,'footer',brand_footer_html($b,$unsubscribe,$year))){
+    if(!replace_email_module($doc,'footer',brand_footer_html($b,$unsubscribe,$year)) && !custom_footer_complete($doc,$b,$unsubscribe)){
         $fallback=email_dom('<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 24px">'.brand_footer_html($b,$unsubscribe,$year).'</td></tr></table>');
         foreach(iterator_to_array($fallback->getElementsByTagName('body')->item(0)->childNodes) as $child)$doc->getElementsByTagName('body')->item(0)->appendChild($doc->importNode($child,true));
     }
     if($trackLink)foreach($doc->getElementsByTagName('a') as $a){
         $u=$a->getAttribute('href');if($u===$unsubscribe||$a->hasAttribute('data-tz-no-track')||!preg_match('#^https?://#i',$u)||!safe_url($u))continue;
-        $isFooter=false;for($parent=$a->parentNode;$parent;$parent=$parent->parentNode)if($parent instanceof \DOMElement&&$parent->hasAttribute('data-tz-footer')){$isFooter=true;break;}
+        $isFooter=false;for($parent=$a->parentNode;$parent;$parent=$parent->parentNode)if($parent instanceof \DOMElement&&($parent->hasAttribute('data-tz-footer')||$parent->getAttribute('data-tz-block')==='footer')){$isFooter=true;break;}
         if(!$isFooter)$a->setAttribute('href',$trackLink($u));
     }
     $preheader=strtr((string)($campaign['preheader']??''),$vars);

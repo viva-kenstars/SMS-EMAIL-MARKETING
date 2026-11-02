@@ -1,0 +1,32 @@
+name: Sendzad engineering source
+on:
+  push:
+    branches: [engineering]
+    paths: ['.github/workflows/sendzad-engineering.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export editable source without repository credentials
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          with zipfile.ZipFile('sendzad-engineering-source.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for p in Path('.').rglob('*'):
+                  if not p.is_file() or '.git' in p.parts or p.name == 'sendzad-engineering-source.zip':
+                      continue
+                  if p.name in ['config.php','.env','.dev.vars','admin.sql'] or 'node_modules' in p.parts:
+                      continue
+                  z.write(p,p.as_posix())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sendzad-engineering-source
+          path: sendzad-engineering-source.zip
+          retention-days: 3

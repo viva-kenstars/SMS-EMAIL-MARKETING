@@ -1,0 +1,8 @@
+verify.your-domain.com {
+    request_body {
+        max_size 4KB
+    }
+    header Strict-Transport-Security "max-age=31536000"
+    reverse_proxy 127.0.0.1:8095
+    # Do not log recipient request bodies or Authorization headers.
+}

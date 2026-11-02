@@ -1,0 +1,28 @@
+[Unit]
+Description=Sendzad independent email verifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sendzad-verifier
+Group=sendzad-verifier
+EnvironmentFile=/etc/sendzad-verifier/environment
+ExecStart=/usr/local/bin/sendzad-verifier
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+VERIFY_LISTEN=127.0.0.1:8095
+VERIFY_TOKEN_FILE=/etc/sendzad-verifier/api-token
+# Real hostname/domain owned by you, with matching forward/reverse DNS.
+VERIFY_HELO=verify.your-domain.com
+VERIFY_FROM=verifier@your-domain.com
+VERIFY_ENABLE_SMTP=true
+VERIFY_REQUIRE_TLS=true
+# Optional reviewed/licensed domain-per-line file (not bundled).
+# VERIFY_DISPOSABLE_FILE=/etc/sendzad-verifier/disposable-domains.txt

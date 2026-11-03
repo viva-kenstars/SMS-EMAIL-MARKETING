@@ -78,6 +78,13 @@
       "when": 1793514321441,
       "tag": "0010_email_marketing",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793743200000,
+      "tag": "0011_sendzad_verifier",
+      "breakpoints": true
     }
   ]
 }

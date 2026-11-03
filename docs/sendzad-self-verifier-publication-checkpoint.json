@@ -1,12 +1,12 @@
 {
   "standalone_engine_commit": "88da06974163ff644c1349eb9f360c8d65761178",
-  "complete_application_integration_tree": "7ec77b5de3fb3d1e4068b0412c770a7c8769b82d",
-  "integration_tree_base_commit": "88da06974163ff644c1349eb9f360c8d65761178",
+  "integration_base_commit": "53f17f40218c7b35deae18d4d0ae67a4ce7ada8c",
   "intended_branch": "engineering",
+  "integration_entrypoints": ["app/lib/server.ts", "app/lib/email/provider-service.ts", "shared-hosting/private/app/Verification.php"],
   "source_default_for_new_jobs": "sendzad",
   "secondary_provider": "reoon",
   "automatic_paid_fallback": false,
   "existing_jobs_reassigned": false,
   "live_deployment_verified": false,
-  "publication_note": "The standalone service was committed. The complete integration tree includes Cloudflare and PHP adapters, additive migrations, UI controls, tests and deployment documentation. Confirm that a reachable commit containing this integration tree is on engineering before claiming the application default changed. Merge against the current head rather than overwriting subsequent user changes. Production hosting, private secrets, migrations and controlled mailbox acceptance remain separate requirements."
+  "publication_note": "Integration is included in this source revision, superseding the previous dangling-tree checkpoint. Deployment still requires migrations, a private service URL/token and controlled host acceptance. No production data or service credentials are included. See docs/VERIFIER-CONNECTION.md."
 }

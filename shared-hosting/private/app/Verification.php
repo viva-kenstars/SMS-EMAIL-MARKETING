@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 namespace Sendzad;
+require_once __DIR__.'/SelfVerifier.php';
 function verification_verdict(array $r,string $address): string {
     if(email($r['email']??'')!==$address)return 'unknown';
     $status=$r['status']??'unknown';
@@ -13,17 +14,21 @@ function verification_verdict(array $r,string $address): string {
     return 'valid';
 }
 function create_verification(array $in): array {
+    $provider=$in['provider']??'sendzad';
+    if(!in_array($provider,['sendzad','reoon'],true))throw new Problem('Choose Sendzad or Reoon.');
     $gid=ident($in['group_id']??'');$name=text($in['name']??'',120);
     if(!$name||!one('SELECT id FROM tz_groups WHERE id=?',[$gid]))throw new Problem('Choose a group and name this check.');
     $id=uid();db()->beginTransaction();
     try{
         query('INSERT INTO tz_verification_jobs(id,name,created_at,updated_at) VALUES(?,?,?,?)',[$id,$name,time(),time()]);
+        if($provider==='sendzad')query('INSERT INTO tz_self_verification_jobs(job_id) VALUES(?)',[$id]);
         query("INSERT INTO tz_verification_items(job_id,contact_id) SELECT ?,c.id FROM tz_contacts c JOIN tz_members m ON m.contact_id=c.id WHERE m.group_id=? AND c.suppressed=0",[$id,$gid]);
         if(!(int)one('SELECT COUNT(*) n FROM tz_verification_items WHERE job_id=?',[$id])['n'])throw new Problem('This group has no available contacts.');
         db()->commit();return ['id'=>$id,'status'=>'ready'];
     }catch(\Throwable $e){db()->rollBack();throw $e;}
 }
 function control_verification(array $in): void {
+    if(self_job(ident($in['id']??''))){self_control_verification($in);return;}
     $id=ident($in['id']??'');$action=$in['action']??'';
     if(!in_array($action,['start','pause','resume'],true))throw new Problem('Unsupported verification action.');
     db()->beginTransaction();
@@ -62,6 +67,7 @@ function advance_verification(?callable $fetcher=null): array {
         set_setting('verification_heartbeat',(string)time());
         $j=one("SELECT * FROM tz_verification_jobs WHERE status='running' AND started_at IS NOT NULL AND next_at<=? ORDER BY updated_at LIMIT 1",[time()]);
         if(!$j)return ['advanced'=>0];
+        if(self_job($j['id']))return self_advance_locked($j,$fetcher);
         $key=unseal($j['key_cipher'],'verification:'.$j['id']);$batch=one("SELECT * FROM tz_verification_batches WHERE job_id=? AND status IN('submitting','polling') ORDER BY created_at LIMIT 1",[$j['id']]);
         if($batch&&$batch['status']==='submitting'){
             query("UPDATE tz_verification_jobs SET status='needs_attention',last_error='Submission interrupted. Review the task in Reoon before retrying.',updated_at=? WHERE id=?",[time(),$j['id']]);

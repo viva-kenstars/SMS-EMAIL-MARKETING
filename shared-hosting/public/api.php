@@ -16,7 +16,7 @@ try{
     if($route==='logout'){$_SESSION=[];session_destroy();json_response(['ok'=>true]);}
     session_write_close();
     if($route==='export')export_report((string)($_GET['id']??''));
-    $out=api_route($route,$method,$in);
+    $out=\Sendzad\self_api_route($route,$method,$in)??api_route($route,$method,$in);
     if(!empty($out['busy']))throw new Problem('Another sending operation is in progress. Try again shortly.',409);
     json_response($out);
 }catch(Problem $e){json_response(['error'=>$e->getMessage()],$e->status);}

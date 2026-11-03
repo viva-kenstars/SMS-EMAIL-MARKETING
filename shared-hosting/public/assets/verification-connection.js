@@ -1,0 +1,39 @@
+/* Connect verification views to authenticated PHP APIs. No browser-held service secrets. */
+(() => {
+'use strict';
+const previous=window.SendzadEnterprise.route;
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tabs=()=>`<nav class="sz-tabs" aria-label="Email settings sections">${[['smtp','SMTP accounts'],['identity','Brand & sender details'],['verification','Verification'],['delivery','Delivery & tracking']].map(([id,title])=>`<a href="#email-settings/${id}" ${id==='verification'?'aria-current="page"':''}>${title}</a>`).join('')}</nav>`;
+window.SendzadEnterprise.route=async function(c){
+ const settings=c.route==='email-settings'&&c.id==='verification';
+ if(!settings&&c.route!=='verification')return previous(c);
+ const main=$('#main');let busy=false;
+ const message=(s,error=false)=>{const el=$('#sv-message');if(el){el.hidden=false;el.className=error?'error sz-notice':'sz-notice';el.textContent=s;}};
+ const run=async fn=>{if(busy)return;busy=true;const inputs=[...main.querySelectorAll('button,input,select')].map(el=>[el,el.disabled]);inputs.forEach(([el])=>el.disabled=true);try{await fn();}catch(e){message(e.message,true);}finally{busy=false;inputs.forEach(([el,v])=>{if(el.isConnected)el.disabled=v;});}};
+ if(settings){
+  const [connection,data]=await Promise.all([c.api('self/settings'),c.api('settings')]);if(c.seq!==c.S.seq)return true;
+  main.innerHTML=c.head('Email settings','')+tabs()+`<div id="sv-message" role="status" hidden></div><section class="panel sz-settings-form"><div class="panel-head"><h2>Verification providers</h2></div><div class="form-section"><h3>Sendzad <span class="pill blue">Default for new checks</span></h3><p>${connection.configured?'Service configured':'Server configuration required'}</p>${connection.service_url?`<code class="sz-code">${esc(connection.service_url)}</code>`:''}<button class="btn" type="button" id="sv-check" ${connection.configured?'':'disabled'}>Test connection</button><details class="disclosure"><summary>Connection setup</summary><p>Set <code>self_verifier_url</code> and <code>self_verifier_token</code> in private/config.php, or use the SENDZAD_VERIFIER_URL and SENDZAD_VERIFIER_TOKEN environment variables. Keep the token out of public files.</p></details><p class="muted">A connection test is not a mailbox accuracy test. Existing jobs keep their engine; paid fallback is off.</p></div><form id="sv-reoon"><div class="form-section"><h3>Reoon <span class="pill">Secondary</span></h3><label class="field">API key<input type="password" name="reoon_key" autocomplete="new-password" placeholder="${data.reoon_configured?'Saved; leave blank to keep':'Enter a Reoon key'}"></label></div><div class="sz-settings-save"><button class="btn primary" type="submit">Save Reoon key</button></div></form></section>`;
+  $('#sv-check').onclick=()=>run(async()=>{await c.api('self/check',{});message('Sendzad responded. Run controlled mailbox acceptance before production checks.');});
+  $('#sv-reoon').onsubmit=e=>{e.preventDefault();const key=new FormData(e.target).get('reoon_key');run(async()=>{await c.api('settings',{reoon_key:key});e.target.reset();message('Reoon key saved. No jobs were started or switched.');});};
+  return true;
+ }
+ const [data,groups]=await Promise.all([c.api('jobs'),c.api('groups')]);if(c.seq!==c.S.seq)return true;
+ const items=data.items||[];
+ main.innerHTML=c.head('Verification','', '<button class="btn primary" type="button" id="sv-new">New check</button>')+`<div id="sv-message" role="status" hidden></div><form id="sv-create" class="panel form-section" hidden><div class="form-grid"><label class="field">Check name<input name="name" maxlength="120" required></label><label class="field">Contact group<select name="group_id" required><option value="">Select group</option>${groups.items.map(g=>`<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('')}</select></label><label class="field">Engine<select name="provider"><option value="sendzad">Sendzad (default)</option><option value="reoon">Reoon (paid secondary)</option></select></label></div><button type="submit" class="btn primary">Save check</button></form><section class="panel"><div class="table-scroll"><table><thead><tr><th>Check</th><th>Engine</th><th>Status</th><th>Likely deliverable</th><th>Remaining</th><th>Actions</th></tr></thead><tbody>${items.map(j=>`<tr><td>${esc(j.name)}${j.last_error?`<small class="secondary-line">${esc(j.last_error)}</small>`:''}</td><td>${j.engine==='sendzad'?'Sendzad':'Reoon'}</td><td>${esc(j.status.replaceAll('_',' '))}</td><td>${c.N(j.valid)}</td><td>${c.N(j.remaining)}</td><td>${j.status==='ready'?`<button class="btn small" data-sv="start" data-id="${j.id}">Start</button>`:j.status==='running'?`<button class="btn small" data-sv="pause" data-id="${j.id}">Pause</button>`:(j.status==='paused'||j.status==='needs_attention'&&j.engine==='sendzad')?`<button class="btn small" data-sv="resume" data-id="${j.id}">Resume pending</button>`:j.status==='completed'&&Number(j.valid)>0?`<button class="btn small" data-sv="add" data-id="${j.id}">Add verified contacts</button>`:''}</td></tr>`).join('')}</tbody></table></div>${items.length?'':'<div class="empty"><h2>No saved checks</h2><p>Create a check from an existing contact group.</p></div>'}</section><p class="muted">Saving does not start verification. The server worker advances started jobs; unknown and risky results remain separate.</p>`;
+ $('#sv-new').onclick=()=>{$('#sv-create').hidden=!$('#sv-create').hidden;};
+ $('#sv-create').onsubmit=e=>{e.preventDefault();const input=Object.fromEntries(new FormData(e.target));run(async()=>{await c.api('jobs',input);await c.render();c.toast('Check saved. Start it separately.');});};
+ main.querySelectorAll('[data-sv]').forEach(button=>button.onclick=()=>run(async()=>{
+  const job=items.find(j=>j.id===button.dataset.id),action=button.dataset.sv;
+  if(action==='add'){
+   c.modal('Add verified contacts',`<label class="field">Destination<select id="sv-target"><option value="new">New contact group</option>${groups.items.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select></label><label class="field" id="sv-group-label">Group title<input id="sv-group-name" maxlength="120"></label><button type="button" class="btn primary" id="sv-add">Add contacts</button>`);
+   $('#sv-target').onchange=()=>{$('#sv-group-label').hidden=$('#sv-target').value!=='new';};
+   let createdGroup=null;
+   $('#sv-add').onclick=async()=>{const b=$('#sv-add');b.disabled=true;try{let target=$('#sv-target').value;if(target==='new'){const name=$('#sv-group-name').value.trim();if(!name)throw Error('Name the contact group.');if(!createdGroup)createdGroup=(await c.api('groups',{name})).group.id;target=createdGroup;}const r=await c.api('jobs/add-valid',{job_id:job.id,group_id:target});$('#dialog').close();c.toast(`${r.added} contacts added. Opt-outs preserved.`);}catch(e){c.toast(e.message);}finally{b.disabled=false;}};return;
+  }
+  if(action==='start'&&!window.confirm(job.engine==='sendzad'?'Start verification on your Sendzad server? No Reoon credits will be used.':'Share this list with Reoon and use paid verification credits?'))return;
+  await c.api('jobs/control',{id:job.id,action,provider_consent:action==='start'});await c.render();
+ }));
+ return true;
+};
+})();

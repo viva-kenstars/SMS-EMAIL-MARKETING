@@ -8,6 +8,12 @@ if(!in_array($mode,['verify','send'],true)){fwrite(STDERR,"Usage: php worker.php
 try{
     $c=Sendzad\config();$seconds=min(45,max(5,(int)($c['worker_seconds']??40)));$max=min(50,max(1,(int)($c['worker_messages']??20)));$start=microtime(true);$count=0;
     set_time_limit($seconds+30);
+    if($mode==='verify'){
+        require_once $root.'/app/VerifierWorker.php';
+        $r=Sendzad\drain_verification(static fn()=>Sendzad\advance_verification(),$seconds,(int)($c['verification_max_steps']??10));
+        if(!empty($r['attention'])){fwrite(STDERR,$r['attention']."\n");exit(1);}
+        exit(0);
+    }
     while(microtime(true)-$start<$seconds && $count<$max){
         $r=$mode==='verify'?Sendzad\advance_verification():Sendzad\advance_campaign();
         if(!empty($r['attention'])){fwrite(STDERR,$r['attention']."\n");break;}

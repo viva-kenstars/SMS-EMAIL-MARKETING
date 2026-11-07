@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const Version = "1.0.0"
+const Version = "1.0.1"
 
 type Result struct {
 	Email      string `json:"email"`
@@ -79,14 +79,25 @@ type Engine struct {
 
 var domainPattern = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$`)
 var localPattern = regexp.MustCompile("^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$")
-var enhancedPattern = regexp.MustCompile(`(?:^|\s)([245]\.[0-9]{1,3}\.[0-9]{1,3})(?:\s|$)`)
+var enhancedPattern = regexp.MustCompile(`^([245]\.[0-9]{1,3}\.[0-9]{1,3})(?:\s|$)`)
 var roles = map[string]bool{"admin": true, "info": true, "support": true, "sales": true, "contact": true, "billing": true, "abuse": true, "postmaster": true, "noreply": true, "no-reply": true}
 
 func normalize(raw string) (string, string, string) {
 	s := strings.TrimSpace(raw)
 	for _, r := range s {
-		if r < 33 || r == 127 {
+		if r < 32 || r == 127 {
 			return s, "", "invalid_syntax"
+		}
+	}
+	// Valid but unsupported quoted/EAI/literal forms must not be called nonexistent.
+	if strings.Contains(s, "@") {
+		if strings.ContainsAny(s, "\"\\") || strings.Contains(s, "@[") {
+			return s, "", "unsupported_format"
+		}
+		for _, r := range s {
+			if r > 127 {
+				return s, "", "unsupported_format"
+			}
 		}
 	}
 	if strings.Count(s, "@") != 1 {
@@ -143,6 +154,7 @@ func (e *Engine) Check(ctx context.Context, raw string) Result {
 		r.Syntax = why
 		r.Reason = why
 		if why == "invalid_syntax" {
+			r.Syntax = "invalid"
 			r.Category = "invalid"
 		}
 		return r
@@ -394,13 +406,25 @@ func (s *smtpSession) command(cmd string) (int, string, error) {
 	return s.reader.ReadResponse(0)
 }
 func smtpClass(code int, message string) string {
-	m := enhancedPattern.FindStringSubmatch(message)
+	// A primary 4xx response remains temporary even if its enhanced code is malformed.
+	if code >= 400 && code < 500 {
+		return "temporary"
+	}
+	m := enhancedPattern.FindStringSubmatch(strings.TrimSpace(message))
 	enhanced := ""
 	if len(m) > 1 {
 		enhanced = m[1]
 	}
-	if code >= 400 && code < 500 {
-		return "temporary"
+	// RFC 2034 requires matching enhanced codes at the start of every reply line.
+	for _, line := range strings.Split(strings.TrimSpace(message), "\n")[1:] {
+		other := enhancedPattern.FindStringSubmatch(strings.TrimSpace(line))
+		if (enhanced != "" && (len(other) < 2 || other[1] != enhanced)) ||
+			(enhanced == "" && len(other) > 1) {
+			return "inconclusive"
+		}
+	}
+	if enhanced != "" && int(enhanced[0]-'0') != code/100 {
+		return "inconclusive"
 	}
 	if code >= 500 && code < 600 {
 		switch enhanced {

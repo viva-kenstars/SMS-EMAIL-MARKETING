@@ -38,7 +38,7 @@ async function request(config: SelfConfig, path: string, body: unknown, fetcher:
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch { throw new Error("Sendzad connection failed. Pending work is retained; no paid fallback was used."); }
-  if (!response.ok || !response.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+  if (!response.ok || response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
     await response.body?.cancel();
     throw new Error("Sendzad request was not accepted. Check the service; no Reoon credits were used.");
   }
@@ -71,6 +71,8 @@ export async function checkSelfHealth(config: SelfConfig, fetcher: typeof fetch 
 export function validateSelfResults(payload: any, expected: string[], now = Date.now()): SelfResult[] {
   if (payload?.engine !== "sendzad" || !Array.isArray(payload.results) ||
       payload.results.length !== expected.length) throw new Error("Incomplete verifier results.");
+  if (!Number.isFinite(now) || expected.length < 1 || expected.length > 4 ||
+      new Set(expected).size !== expected.length) throw new Error("Invalid expected address set.");
   const mapped = new Map<string, SelfResult>();
   for (const r of payload.results) {
     if (!r || typeof r.email !== "string" || !expected.includes(r.email) || mapped.has(r.email) ||
@@ -90,16 +92,24 @@ export function validateSelfResults(payload: any, expected: string[], now = Date
         r.reason !== "recipient_accepted_non_catch_all" || r.retryable)) {
       throw new Error("Positive result lacks mailbox evidence.");
     }
+    if (!["valid", "invalid", "invalid_syntax", "unsupported_format"].includes(r.syntax) ||
+        typeof r.role_account !== "boolean" || (r.catch_all !== null && typeof r.catch_all !== "boolean") ||
+        !["not_assessed", "not_listed", "listed"].includes(r.disposable)) {
+      throw new Error("Invalid verifier field types.");
+    }
     if (r.category === "invalid") {
       if (!["invalid_syntax", "null_mx", "no_mail_route", "recipient_rejected"].includes(r.reason) ||
-          (r.reason === "invalid_syntax" && r.syntax !== "invalid") ||
-          (r.reason === "recipient_rejected" && (r.stage !== "rcpt_to" || r.smtp !== "absent" ||
+          (["null_mx", "no_mail_route"].includes(r.reason) &&
+            (r.mail_route !== r.reason || r.smtp !== "not_checked" || r.syntax !== "valid")) ||
+          (r.reason === "invalid_syntax" && (r.smtp !== "not_checked" || r.mail_route !== "not_checked")) ||
+          (r.reason === "invalid_syntax" && !["invalid", "invalid_syntax"].includes(r.syntax)) ||
+          (r.reason === "recipient_rejected" && (r.stage !== "rcpt_to" || r.smtp !== "absent" || r.syntax !== "valid" || r.mail_route !== "present" ||
             !Number.isInteger(r.smtp_code) || r.smtp_code < 500 || r.smtp_code >= 600))) {
         throw new Error("Permanent failure was not established.");
       }
     }
     if (r.category !== "unknown" && r.retryable) throw new Error("Contradictory verifier result.");
-    mapped.set(r.email, r);
+    mapped.set(r.email, r.syntax === "invalid_syntax" ? { ...r, syntax: "invalid" } : r);
   }
   return expected.map(email => mapped.get(email)!);
 }

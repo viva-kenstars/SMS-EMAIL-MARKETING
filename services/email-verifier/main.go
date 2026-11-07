@@ -60,7 +60,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		jsonOut(w, 405, map[string]string{"error": "post_required"})
 		return
 	}
-	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+	if !strings.EqualFold(strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0]), "application/json") {
 		jsonOut(w, 415, map[string]string{"error": "json_required"})
 		return
 	}
